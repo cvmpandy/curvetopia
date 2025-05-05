@@ -9,16 +9,15 @@ class Point(BaseModel):
     x: float
     y: float
 
-class Polyline(BaseModel):
-    points: List[Point]
 
-# class DrawingData(BaseModel):
-#     # Expecting a list of polylines, where each polyline is a list of [float, float] points
-#     points: List[Polyline]
 
 class DrawingData(BaseModel):
     # Expecting a list of polylines, where each polyline is a list of [float, float] points
-    points: List[List[List[float]]]
+    points: List[List[Point]]
+
+# class DrawingData(BaseModel):
+#     # Expecting a list of polylines, where each polyline is a list of [float, float] points
+#     points: List[List[List[float]]]
 
 
 app = FastAPI()

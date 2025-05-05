@@ -20,22 +20,24 @@ function App() {
       setBackendResponse({ message: "No drawing data to send." });
       return;
     }
-    // Convert each [x, y] to { x, y } for backend
-    // const allStrokes = allStrokes_unstruct.map(stroke =>
-    //   stroke.map(([x, y]) => ({ x, y }))
-    // );
+    // --- IMPORTANT CHANGE HERE: Transform data for backend ---
+    // The backend now expects a structure like:
+    // [ [ {x: x1, y: y1}, {x: x2, y: y2}, ... ], [ {x: x'1, y: y'1}, ... ], ... ]
+    const transformedStrokes = allStrokes.map(polyline =>
+      polyline.map(point => ({ x: point[0], y: point[1] }))
+  );
    
     const backendUrl = 'http://127.0.0.1:8000/process_drawing'; // Or http://localhost:8000
 
     try {
-      console.log(`Sending ${allStrokes.length} strokes to backend...`);
+      console.log(`Sending ${transformedStrokes.length} strokes to backend...`);
       const response = await fetch(backendUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         // Send the list of polylines in the expected format by the backend
-        body: JSON.stringify({ points: allStrokes }),
+        body: JSON.stringify({ points: transformedStrokes }),
       });
 
       // Check if the request was successful
