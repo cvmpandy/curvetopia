@@ -16,7 +16,10 @@ const DrawingCanvas = forwardRef(({tool ,strokeColor = 'black', strokeWidth = 2,
         setAllStrokes([]);
         const canvas = canvasRef.current;
         const context = canvas.getContext('2d');
-        context.clearRect(0, 0, canvas.width, canvas.height);
+        if(context){
+            context.clearRect(0, 0, canvas.width, canvas.height);
+        }
+        
     }
     // Could expose other methods here later, e.g., addStroke, setTool
   }));
@@ -92,7 +95,7 @@ const DrawingCanvas = forwardRef(({tool ,strokeColor = 'black', strokeWidth = 2,
 };
 
 
-
+//mouse event handler
 
   // Start a stroke
   const startDrawing = ({ nativeEvent }) => {
@@ -101,6 +104,7 @@ const DrawingCanvas = forwardRef(({tool ,strokeColor = 'black', strokeWidth = 2,
     setCurrentPath([[offsetX, offsetY]]); // Start storing points for the current action (draw or erase)
 
     if (tool === 'freehand') {
+        
         contextRef.current.beginPath();
         contextRef.current.moveTo(offsetX, offsetY);
         contextRef.current.strokeStyle = strokeColor; // Apply current stroke color
@@ -113,7 +117,7 @@ const DrawingCanvas = forwardRef(({tool ,strokeColor = 'black', strokeWidth = 2,
   const draw = ({ nativeEvent }) => {
     if (!isDrawing) return;
     const { offsetX, offsetY } = nativeEvent;
-
+   
     if (tool === 'freehand') {
         contextRef.current.lineTo(offsetX, offsetY);
         contextRef.current.stroke();
@@ -130,10 +134,13 @@ const DrawingCanvas = forwardRef(({tool ,strokeColor = 'black', strokeWidth = 2,
     if (!isDrawing) return; // Prevent multiple calls
     setIsDrawing(false);
 
-    if (tool === 'freehand' && currentPath.length > 1) {
+    if (tool === 'freehand' ) {
+        contextRef.current.closePath();
+        if(currentPath.length > 1){
       // Add the finished freehand stroke to our collection
       setAllStrokes(prevStrokes => [...prevStrokes, currentPath]);
        // The useEffect watching allStrokes will handle the redraw
+        }
     } else if (tool === 'eraser' && currentPath.length > 1) {
       // Process the collected eraser path against existing strokes
       handleErase(currentPath);
@@ -145,54 +152,92 @@ const DrawingCanvas = forwardRef(({tool ,strokeColor = 'black', strokeWidth = 2,
   };
 
   const handleErase = (eraserPath) => {
-    if (eraserPath.length === 0) return;
+    if (eraserPath.length < 2) return; // Need at least 2 points for an eraser stroke
 
-    // Simple point-based proximity erasing
     const eraserRadius = 15; // Radius around eraser points to remove drawing points
-    const newStrokes = [];
+    const newStrokes = []; // This will collect all the segments that survive erasing
 
+    // Iterate through each existing stroke
     allStrokes.forEach(stroke => {
-        const pointsToKeep = [];
-        // Iterate through each point in the existing stroke
-        stroke.forEach(point => {
-            let keepPoint = true;
-            // Check if this point is "close" to *any* point in the eraser path
+        if (stroke.length < 2) {
+            // Handle single points or 2-point lines which cannot be 'split' geometrically
+            // Check if this short stroke is entirely within eraser radius
+            let completelyErased = true;
+            for(const point of stroke) {
+                 let isKept = true;
+                 for (const eraserPoint of eraserPath) {
+                    const dx = point[0] - eraserPoint[0];
+                    const dy = point[1] - eraserPoint[1];
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < eraserRadius) {
+                        isKept = false;
+                        break; // Found an eraser point nearby, this stroke point is "erased"
+                    }
+                }
+                if (isKept) {
+                    completelyErased = false; // Found a point that was NOT erased
+                    break; // No need to check further points in this short stroke
+                }
+            }
+             if (!completelyErased) {
+                 newStrokes.push(stroke); // If not completely erased, keep the original (short) stroke
+             }
+             return; // Move to the next original stroke
+        }
+
+        // For strokes with 2 or more points, determine which points survive
+        const isPointKept = stroke.map(point => {
+            let kept = true; // Assume point is kept unless proven otherwise
             for (const eraserPoint of eraserPath) {
                 const dx = point[0] - eraserPoint[0];
                 const dy = point[1] - eraserPoint[1];
                 const distance = Math.sqrt(dx * dx + dy * dy);
-
                 if (distance < eraserRadius) {
-                    keepPoint = false;
-                    break; // Point is close to the eraser, no need to check other eraser points
+                    kept = false; // This point is close enough to the eraser path to be removed
+                    break; // No need to check against other eraser points for this stroke point
                 }
             }
-
-            if (keepPoint) {
-                pointsToKeep.push(point);
-            } else {
-                 // Point is being erased. If we were previously adding points,
-                 // this indicates a potential split in the stroke.
-                 // For this simplified Phase 2, we just drop the point.
-                 // A more advanced approach would detect contiguous segments
-                 // in 'pointsToKeep' and add each segment as a new stroke.
-            }
+            return kept; // Return true if the point was not close to any eraser point
         });
 
-        // Add remaining points as a new stroke if there are any.
-        // Note: This simple approach doesn't handle splitting a stroke into two correctly.
-        // It will create a single stroke with gaps. Implementing splitting
-        // is a more complex geometric task for later refinement.
-        if (pointsToKeep.length > 1) { // Need at least 2 points for a valid line segment/stroke
-            newStrokes.push(pointsToKeep);
+        // Now, find contiguous sequences of 'true' in the isPointKept array.
+        // Each contiguous sequence represents a segment of the original stroke that survived.
+        let currentSegmentStart = -1; // Use -1 to indicate not currently inside a segment
+
+        for (let i = 0; i < isPointKept.length; i++) {
+            if (isPointKept[i] && currentSegmentStart === -1) {
+                // Found the start of a new potential segment (current point is kept, previous was not or it's the first point)
+                currentSegmentStart = i;
+            } else if (!isPointKept[i] && currentSegmentStart !== -1) {
+                // Found the end of a segment (current point is erased, but we were just in a segment)
+                // Extract the segment points from the original stroke using the start and end indices
+                const segment = stroke.slice(currentSegmentStart, i); // slice(start, end) extracts up to but not including end index
+                // Only add valid line segments (need at least 2 points)
+                if (segment.length >= 2) {
+                    newStrokes.push(segment); // Add this valid segment as a new stroke
+                }
+                currentSegmentStart = -1; // Reset segment start marker
+            }
+            // If isPointKept[i] is true AND currentSegmentStart is NOT -1, we continue the current segment.
+            // If isPointKept[i] is false AND currentSegmentStart is -1, we are in an erased gap, do nothing.
         }
-        // If length is 0 or 1, the whole stroke (or remaining segment) is gone.
+
+        // After the loop, check if the stroke ended with a segment that hasn't been added yet
+        if (currentSegmentStart !== -1) {
+             // The segment runs from currentSegmentStart to the end of the stroke
+             const segment = stroke.slice(currentSegmentStart, isPointKept.length); // slice to the end
+             if (segment.length >= 2) {
+                 newStrokes.push(segment); // Add the final segment if valid
+             }
+        }
     });
 
-    // Update the state with the modified list of strokes
+    // Update the state with the completely new list of strokes (including split segments)
     setAllStrokes(newStrokes);
-    // The useEffect watching allStrokes will trigger the redraw.
+     // The useEffect watching allStrokes state will automatically trigger a full redraw
+     // of the canvas based on the updated state.
 };
+
 
   
   // Clear everything
