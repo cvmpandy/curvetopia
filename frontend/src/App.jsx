@@ -1,51 +1,57 @@
 // frontend/src/App.js
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import DrawingCanvas from './DrawingCanvas'; // Import the canvas component
 import './App.css'; // Keep or remove default App styling
+//import './styles.css'; // Optional: Add some basic styles here
 
 function App() {
-  const [currentDrawingPolyline, setCurrentDrawingPolyline] = useState([]);
+  const canvasRef = useRef(null); // Create a ref for the DrawingCanvas component
   const [backendResponse, setBackendResponse] = useState(null);
+  const [activeTool, setActiveTool] = useState('freehand'); // State to track the currently active tool ('freehand' or 'eraser')
 
-  // This function is called by the DrawingCanvas when a stroke is finished
-  const handleDrawingComplete = (polyline) => {
-    console.log("Drawing stroke complete:", polyline);
-    setCurrentDrawingPolyline(polyline); // For Phase 1, we'll just process the last stroke
-    // In later phases, you'll add this polyline to a list of ALL strokes
-  };
-
-  // Function to send the drawing data to the backend
+  // Function to send ALL drawing data to the backend
   const sendDrawingToBackend = async () => {
-    if (currentDrawingPolyline.length === 0) {
+    // Get all strokes data from the DrawingCanvas component using the ref
+    // We rely on the canvas component to give us its current state of all drawn polylines
+    const allStrokes = canvasRef.current ? canvasRef.current.getAllStrokes() : [];
+
+    if (allStrokes.length === 0) {
       console.log("No drawing data to send.");
+      setBackendResponse({ message: "No drawing data to send." });
       return;
     }
-
+    // Convert each [x, y] to { x, y } for backend
+    // const allStrokes = allStrokes_unstruct.map(stroke =>
+    //   stroke.map(([x, y]) => ({ x, y }))
+    // );
+   
     const backendUrl = 'http://127.0.0.1:8000/process_drawing'; // Or http://localhost:8000
 
     try {
+      console.log(`Sending ${allStrokes.length} strokes to backend...`);
       const response = await fetch(backendUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        // Send the polyline data in the expected format by the backend
-        body: JSON.stringify({ points: currentDrawingPolyline }),
+        // Send the list of polylines in the expected format by the backend
+        body: JSON.stringify({ points: allStrokes }),
       });
 
+      // Check if the request was successful
       if (!response.ok) {
+        // Attempt to read the error response body
         const errorText = await response.text();
+        console.error("Backend error response:", errorText);
         throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
       }
 
       const result = await response.json();
       console.log("Backend response:", result);
-      setBackendResponse(result); // Store the response state to display if needed
+      setBackendResponse(result); // Store the response state to display
 
-      // Optional: Draw the processed data from the backend back onto the canvas
-      // For Phase 1, the backend just returns the input, so this won't look different yet.
-      // You would pass 'result.processed_data' back to the canvas component's props
-      // and add logic there to draw these 'processed' points.
+      // TODO: In later phases, you will use 'result.processed_data'
+      // to update the canvas visualization. For now, we just display the raw response.
 
     } catch (error) {
       console.error("Error sending drawing to backend:", error);
@@ -53,27 +59,63 @@ function App() {
     }
   };
 
+  // Function to clear the canvas
+  const handleClearCanvas = () => {
+      if (canvasRef.current) {
+          canvasRef.current.clearCanvas();
+          setBackendResponse(null); // Clear previous backend response
+      }
+  };
+
   return (
     <div className="App" style={{ textAlign: 'center', padding: '20px' }}>
       <h1>Curvetopia Web Studio</h1>
-      <p>Draw on the canvas and click "Process" to send data to the backend.</p>
+      <p>Draw on the canvas using different tools.</p>
+
+      {/* Toolbar for tool selection and actions */}
+      <div style={{ marginBottom: '15px' }}>
+          <button
+              onClick={() => setActiveTool('freehand')}
+              // Add a simple style to indicate active tool
+              style={{ marginRight: '10px', fontWeight: activeTool === 'freehand' ? 'bold' : 'normal' }}
+          >
+              Freehand Tool
+          </button>
+          <button
+              onClick={() => setActiveTool('eraser')}
+              style={{ marginRight: '10px', fontWeight: activeTool === 'eraser' ? 'bold' : 'normal' }}
+          >
+              Eraser Tool
+          </button>
+          <button
+              onClick={sendDrawingToBackend}
+              style={{ marginRight: '10px' }}
+          >
+            Process Drawing
+          </button>
+          <button onClick={handleClearCanvas}>
+              Clear Canvas
+          </button>
+      </div>
+
 
       {/* Render the DrawingCanvas component */}
-      <DrawingCanvas onDrawingComplete={handleDrawingComplete} />
+      {/* Pass the active tool and ref down to the canvas */}
+      <DrawingCanvas
+         ref={canvasRef}
+         tool={activeTool} // Pass the current active tool
+         // You could pass other props like stroke color or width here too
+         strokeColor={activeTool === 'eraser' ? 'rgba(255,0,0,0.5)' : 'black'} // Optional: Visual cue for eraser (won't affect erasing logic itself in this basic setup)
+         strokeWidth={activeTool === 'eraser' ? 10 : 2} // Optional: Visual cue for eraser width
+         style={{ border: '1px solid #ccc', cursor: activeTool === 'eraser' ? 'crosshair' : 'default' }} // Add border and change cursor
+      />
 
-      {/* Button to trigger the backend processing */}
-      <button
-        onClick={sendDrawingToBackend}
-        style={{ margin: '20px', padding: '10px 20px', fontSize: '16px' }}
-      >
-        Process Drawing
-      </button>
-
-      {/* Display backend response (optional for debugging) */}
+      {/* Display backend response (optional for debugging/feedback) */}
       {backendResponse && (
         <div style={{ marginTop: '20px' }}>
           <h2>Backend Response:</h2>
-          <pre style={{ textAlign: 'left', maxWidth: '80%', margin: '0 auto', backgroundColor: '#f0f0f0', padding: '10px' }}>
+          <pre style={{ textAlign: 'left', maxWidth: '90%', margin: '0 auto', backgroundColor: '#f0f0f0', padding: '15px', borderRadius: '5px', overflowX: 'auto' }}>
+            {/* Use JSON.stringify for better formatting of the response object */}
             {JSON.stringify(backendResponse, null, 2)}
           </pre>
         </div>
