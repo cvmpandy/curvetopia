@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState ,forwardRef, useImperativeHandle } from 'react';
 
 // forwardRef to allow parent component (App.js) to get a ref to this component's DOM node or exposed methods
-const DrawingCanvas = forwardRef(({tool ,strokeColor = 'black', strokeWidth = 2, onDrawingComplete , ...props},ref) => {
+const DrawingCanvas = forwardRef(({tool ,strokeColor = 'black', strokeWidth = 2, onDrawingComplete , className, ...props},ref) => {
   const canvasRef = useRef(null);
   const contextRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -250,6 +250,7 @@ const DrawingCanvas = forwardRef(({tool ,strokeColor = 'black', strokeWidth = 2,
   };
 
   return (
+    <div className={className} style={{ position: 'relative', width: '100%', height: '100%'}}>
       <canvas
         ref={canvasRef}
         onMouseDown={startDrawing}
@@ -259,7 +260,7 @@ const DrawingCanvas = forwardRef(({tool ,strokeColor = 'black', strokeWidth = 2,
         style={{ border: '1px solid black' }}
         {...props} // Allow external styles or props
       />
-     
+     </div>
   );
 });
 
